@@ -1,14 +1,35 @@
 /**
- * 4.3 设计一个完善的响应式系统
+ * 4.3 分支切换和 cleanup
+ * 没有用到的字段修改时会调用副作用函数
+ * 解决的思路就是每次副作用函数执行时，把它从所有与之关联的依赖集合中删除
  */
 
 // 用一个全局变量存储被注册的副作用函数
 let activeEffect;
+
 // effect 用于注册副作用函数,这样副作用函数名字不用固定同时也可以添加匿名函数
 const effect = (fn) => {
-  activeEffect = fn;
-  fn();
+  const effectFn = () => {
+    // 调用 cleanup 函数完成清除工作
+    cleanup(effectFn);
+    // 当 effectFn 执行的时候，将其设置为当前激活的副作用函数
+    activeEffect = effectFn;
+    fn();
+  };
+  effectFn.deps = [];
+  effectFn();
 };
+
+const cleanup = (effectFn) => {
+  // 遍历 effectFn.deps 数组
+  for (let i = 0; i < effectFn.deps; i++) {
+    const deps = effectFn.deps[i];
+    deps.delete(effectFn);
+  }
+  // 最后需要重置 effectFn.deps 数组
+  effectFn.deps.length = 0;
+};
+
 // 存储副作用函数的桶
 // weakMap 对 key 是弱引用，不影响垃圾回收，如果 target 对象没有引用，说明用户侧不再需要它，垃圾回收机制会完成任务
 const bucket = new WeakMap();
@@ -49,6 +70,9 @@ function track(target, key) {
   }
   // 将当前激活的副作用函数添加到桶里
   deps.add(activeEffect);
+  // deps 就是一个与当前副作用函数存在联系的依赖集合
+  // 将其添加到 activeEffect 的 deps 数组中
+  activeEffect.deps.push(deps);
 }
 
 function trigger(target, key) {
@@ -57,8 +81,9 @@ function trigger(target, key) {
   if (!depsMap) return;
   // 根据 key 取得副作用函数并执行
   const effects = depsMap.get(key);
-  effects && effects.forEach((fn) => fn());
-  // 返回 true 代表设置成功
+  // 主要是为了解决死循环，当effects 删除之后添加 就会造成死循环 通过新建一个 set，循环这个新的 set 就可以避免
+  const effectsToRun = new Set(effects);
+  effectsToRun && effectsToRun.forEach((fn) => fn());
 }
 
 // 副作用函数
