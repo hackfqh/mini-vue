@@ -1,14 +1,43 @@
 /**
- * 4.7 调度执行
- * effect(() => obj.foo++)
- * 当 trigger 触发副作用函数执行时，有能力决定副作用函数执行的时机、次数以及方式
- * 有点类似 vue 中 多次修改响应式数据但只会触发一次更新，vue 实现了一个更加完善的调度器
+ * 4.7 计算属性 computed 和 lazy
+ * 可以通过 effect 配置 lazy 为懒执行 effect 不会立即执行，而是会返回一个函数，手动调用函数执行
  */
 
 // 用一个全局变量存储被注册的副作用函数
 let activeEffect;
 // 用数组模拟栈元素 存放当前正在执行的副作用函数
 let effectStack = [];
+
+// 计算属性
+function computed(getter) {
+  // value 用来缓存上一次的执行结果,解决了呼缓存问题
+  let value;
+  // dirty 标志，用来标识是否需要重新计算，为 true 时意味着脏，需要计算
+  let dirty = true;
+  // 把 getter 作为副作用函数，创建一个 lazy 的 effect
+  const effectFn = effect(getter, {
+    lazy: true,
+    scheduler() {
+      if (!dirty) {
+        dirty = true;
+        trigger(obj, "value");
+      }
+    },
+  });
+  const obj = {
+    // 当读取 value 的时候才执行 effectFn
+    get value() {
+      if (dirty) {
+        value = effectFn();
+        // 设置为 false 下次访问直接返回 value
+        dirty = false;
+      }
+      track(obj, "value");
+      return value;
+    },
+  };
+  return obj;
+}
 
 // effect 用于注册副作用函数,这样副作用函数名字不用固定同时也可以添加匿名函数
 const effect = (fn, options = {}) => {
@@ -19,15 +48,21 @@ const effect = (fn, options = {}) => {
     activeEffect = effectFn;
     // 在调用当前副作用函数之前将当前副作用函数压入栈
     effectStack.push(effectFn);
-    fn();
+    const res = fn();
     // 执行完毕后将当前副作用函数弹出栈，并把activeEffect 还原为之前的值
     effectStack.pop();
     activeEffect = effectStack[effectStack.length - 1];
+    return res;
   };
   // 将 options 挂载到 effectFn 上
   effectFn.options = options;
   effectFn.deps = [];
-  effectFn();
+  // 只有非  lazy 的时候才会执行
+  if (!options.lazy) {
+    effectFn();
+  }
+  // 将副作用函数作为返回值返回
+  return effectFn;
 };
 
 const cleanup = (effectFn) => {
@@ -45,7 +80,7 @@ const cleanup = (effectFn) => {
 const bucket = new WeakMap();
 
 // 原始数据
-const data = { text: "hello world", bar: "bar", foo: 1 };
+const data = { text: "hello world", bar: 2, foo: 1 };
 
 // 对原始数据的代理
 const obj = new Proxy(data, {
@@ -110,60 +145,22 @@ function trigger(target, key) {
   });
 }
 
-// 副作用函数
-// effect(() => {
-//   document.body.innerText = obj.text;
-// });
+// 测试功能 1 计算属性中的值修改后 计算属性返回的结果也得改变 主要是通过在改变值 trigger 函数中将 dirty 改为 true 就可以重新计算了
+// const sumRes = computed(() => obj.foo + obj.bar);
 
-// setTimeout(() => {
-//   obj.text = "hello vue3";
-// }, 1000);
+// console.log(sumRes.value);
+// console.log(sumRes.value);
 
-// effect 添加调度器
-// effect(
-//   () => {
-//     console.log(obj.foo);
-//   },
-//   {
-//     scheduler(fn) {
-//       setTimeout(fn);
-//     },
-//   }
-// );
+// obj.foo++;
 
-// 定义一个任务队列
-const jobQueue = new Set();
-// 使用 Promise.resolve 创建一个 promise 实例，用来把一个任务添加到微任务队列
-const p = Promise.resolve();
+// console.log(sumRes.value);
 
-// 一个标志代表是否正在刷新队列
-let isFlushing = false;
-function flushJob() {
-  if (isFlushing) return;
-  isFlushing = true;
-  p.then(() => {
-    jobQueue.forEach((job) => job());
-  }).finally(() => {
-    isFlushing = false;
-  });
-}
+// 测试功能2：包含计算属性值得副作用函数不会在计算属性内的值修改后触发
+// 主要是因为 计算属性的值获取时不会触发收集依赖 处理方式就是在 计算属性值获取的时候收集依赖
+const sumRes = computed(() => obj.foo + obj.bar);
 
-effect(
-  () => {
-    console.log(obj.foo);
-  },
-  {
-    scheduler(fn) {
-      jobQueue.add(fn);
-      flushJob();
-    },
-  }
-);
+effect(() => {
+  console.log(sumRes.value);
+});
 
 obj.foo++;
-obj.foo++;
-obj.foo++;
-obj.foo++;
-// 只会打印 1 5
-
-// console.log("执行结束了");
