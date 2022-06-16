@@ -1,7 +1,8 @@
 /**
- * 4.5 嵌套的 effect 与 effect 栈
- * 以前的实现activeEffect 会存储最后一个执行的副作用函数
- * 现在添加一个 effectStack 栈的结构 让 activeEffect 指向栈顶元素 副作用函数执行完的时候就将当前元素从栈顶弹出
+ * 4.5 避免无限递归循环
+ * effect(() => obj.foo++)
+ * 正在执行一个副作用函数时由于设置值 需要取出副作用函数执行 就会导致无限递归
+ * 解决办法就是 判断一下取出的副作用函数与当前正在执行的函数相同，则不触发执行
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -88,9 +89,16 @@ function trigger(target, key) {
   if (!depsMap) return;
   // 根据 key 取得副作用函数并执行
   const effects = depsMap.get(key);
+
   // 主要是为了解决死循环，当effects 删除之后添加 就会造成死循环 通过新建一个 set，循环这个新的 set 就可以避免
-  const effectsToRun = new Set(effects);
-  effectsToRun && effectsToRun.forEach((fn) => fn());
+  const effectsToRun = new Set();
+  effects.forEach((effectFn) => {
+    // 判断一下取出的副作用函数是否和当前正在执行的函数相同 相同的话就不执行了
+    if (effectFn !== activeEffect) {
+      effectsToRun.add(effectFn);
+    }
+  });
+  effectsToRun.forEach((fn) => fn());
 }
 
 // 副作用函数
