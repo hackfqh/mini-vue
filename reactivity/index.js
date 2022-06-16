@@ -1,20 +1,27 @@
 /**
- * 4.3 分支切换和 cleanup
- * 没有用到的字段修改时会调用副作用函数
- * 解决的思路就是每次副作用函数执行时，把它从所有与之关联的依赖集合中删除
+ * 4.5 嵌套的 effect 与 effect 栈
+ * 以前的实现activeEffect 会存储最后一个执行的副作用函数
+ * 现在添加一个 effectStack 栈的结构 让 activeEffect 指向栈顶元素 副作用函数执行完的时候就将当前元素从栈顶弹出
  */
 
 // 用一个全局变量存储被注册的副作用函数
 let activeEffect;
+// 用数组模拟栈元素 存放当前正在执行的副作用函数
+let effectStack = [];
 
 // effect 用于注册副作用函数,这样副作用函数名字不用固定同时也可以添加匿名函数
 const effect = (fn) => {
   const effectFn = () => {
-    // 调用 cleanup 函数完成清除工作
+    // 调用 cleanup 函数完成清除工作,主要是为了避免副作用函数产生遗留，就是一些没有用的副作用从当前副作用函数中解绑，让当前副作用函数与没有用到的数据没有关系(p50)
     cleanup(effectFn);
     // 当 effectFn 执行的时候，将其设置为当前激活的副作用函数
     activeEffect = effectFn;
+    // 在调用当前副作用函数之前将当前副作用函数压入栈
+    effectStack.push(effectFn);
     fn();
+    // 执行完毕后将当前副作用函数弹出栈，并把activeEffect 还原为之前的值
+    effectStack.pop();
+    activeEffect = effectStack[effectStack.length - 1];
   };
   effectFn.deps = [];
   effectFn();
@@ -35,7 +42,7 @@ const cleanup = (effectFn) => {
 const bucket = new WeakMap();
 
 // 原始数据
-const data = { text: "hello world" };
+const data = { text: "hello world", bar: "bar", foo: "foo" };
 
 // 对原始数据的代理
 const obj = new Proxy(data, {
@@ -87,10 +94,20 @@ function trigger(target, key) {
 }
 
 // 副作用函数
-effect(() => {
-  document.body.innerText = obj.text;
-});
+// effect(() => {
+//   document.body.innerText = obj.text;
+// });
 
-setTimeout(() => {
-  obj.text = "hello vue3";
-}, 1000);
+// setTimeout(() => {
+//   obj.text = "hello vue3";
+// }, 1000);
+
+let temp1, temp2;
+effect(function effectFn1() {
+  console.log("effectFn1执行了");
+  effect(function effectFn2() {
+    console.log("effectFn2 执行了");
+    temp2 = obj.bar;
+  });
+  temp1 = obj.foo;
+});
