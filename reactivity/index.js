@@ -1,8 +1,8 @@
 /**
- * 4.5 避免无限递归循环
+ * 4.7 调度执行
  * effect(() => obj.foo++)
- * 正在执行一个副作用函数时由于设置值 需要取出副作用函数执行 就会导致无限递归
- * 解决办法就是 判断一下取出的副作用函数与当前正在执行的函数相同，则不触发执行
+ * 当 trigger 触发副作用函数执行时，有能力决定副作用函数执行的时机、次数以及方式
+ * 有点类似 vue 中 多次修改响应式数据但只会触发一次更新，vue 实现了一个更加完善的调度器
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -11,7 +11,7 @@ let activeEffect;
 let effectStack = [];
 
 // effect 用于注册副作用函数,这样副作用函数名字不用固定同时也可以添加匿名函数
-const effect = (fn) => {
+const effect = (fn, options = {}) => {
   const effectFn = () => {
     // 调用 cleanup 函数完成清除工作,主要是为了避免副作用函数产生遗留，就是一些没有用的副作用从当前副作用函数中解绑，让当前副作用函数与没有用到的数据没有关系(p50)
     cleanup(effectFn);
@@ -24,6 +24,8 @@ const effect = (fn) => {
     effectStack.pop();
     activeEffect = effectStack[effectStack.length - 1];
   };
+  // 将 options 挂载到 effectFn 上
+  effectFn.options = options;
   effectFn.deps = [];
   effectFn();
 };
@@ -43,7 +45,7 @@ const cleanup = (effectFn) => {
 const bucket = new WeakMap();
 
 // 原始数据
-const data = { text: "hello world", bar: "bar", foo: "foo" };
+const data = { text: "hello world", bar: "bar", foo: 1 };
 
 // 对原始数据的代理
 const obj = new Proxy(data, {
@@ -98,7 +100,14 @@ function trigger(target, key) {
       effectsToRun.add(effectFn);
     }
   });
-  effectsToRun.forEach((fn) => fn());
+  effectsToRun.forEach((effectFn) => {
+    // 如果一个副作用函数存在调度器，则调用该调度器，并将副作用函数作为参数传递
+    if (effectFn.options.scheduler) {
+      effectFn.options.scheduler(effectFn);
+    } else {
+      effectFn();
+    }
+  });
 }
 
 // 副作用函数
@@ -110,12 +119,51 @@ function trigger(target, key) {
 //   obj.text = "hello vue3";
 // }, 1000);
 
-let temp1, temp2;
-effect(function effectFn1() {
-  console.log("effectFn1执行了");
-  effect(function effectFn2() {
-    console.log("effectFn2 执行了");
-    temp2 = obj.bar;
+// effect 添加调度器
+// effect(
+//   () => {
+//     console.log(obj.foo);
+//   },
+//   {
+//     scheduler(fn) {
+//       setTimeout(fn);
+//     },
+//   }
+// );
+
+// 定义一个任务队列
+const jobQueue = new Set();
+// 使用 Promise.resolve 创建一个 promise 实例，用来把一个任务添加到微任务队列
+const p = Promise.resolve();
+
+// 一个标志代表是否正在刷新队列
+let isFlushing = false;
+function flushJob() {
+  if (isFlushing) return;
+  isFlushing = true;
+  p.then(() => {
+    jobQueue.forEach((job) => job());
+  }).finally(() => {
+    isFlushing = false;
   });
-  temp1 = obj.foo;
-});
+}
+
+effect(
+  () => {
+    console.log(obj.foo);
+  },
+  {
+    scheduler(fn) {
+      jobQueue.add(fn);
+      flushJob();
+    },
+  }
+);
+
+obj.foo++;
+obj.foo++;
+obj.foo++;
+obj.foo++;
+// 只会打印 1 5
+
+// console.log("执行结束了");
