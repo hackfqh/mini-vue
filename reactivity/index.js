@@ -1,6 +1,6 @@
 /**
- * 4.7 计算属性 computed 和 lazy
- * 可以通过 effect 配置 lazy 为懒执行 effect 不会立即执行，而是会返回一个函数，手动调用函数执行
+ * 4.9 watch 的实现原理
+ * 所谓 watch 其本质就是 观测一个响应式数据，当数据发生变化时通知并执行相应的回调函数
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -37,6 +37,51 @@ function computed(getter) {
     },
   };
   return obj;
+}
+
+/**
+ * watch
+ * @param {*} source 可以是一个响应式数据，也可以是一个 getter 函数
+ * @param {*} cb 响应式数据变化后执行的回调函数
+ */
+function watch(source, cb) {
+  let getter;
+  //
+  if (typeof source === "function") {
+    getter = source;
+  } else {
+    getter = () => traverse(source);
+  }
+  let oldValue, newValue;
+  const effectFn = effect(
+    // 调用 traverse 递归的读取
+    () => getter(),
+    {
+      lazy: true,
+      scheduler() {
+        // 在 scheduler 中执行新的副作用函数，得到的就是新值
+        newValue = effectFn();
+        // 当数据变化时，调用回调函数 cb
+        cb(newValue, oldValue);
+        // 更新一下旧值
+        oldValue = newValue;
+      },
+    }
+  );
+  // 手动调用副作用函数 拿到的就是旧值
+  oldValue = effectFn();
+}
+
+function traverse(value, seen = new Set()) {
+  // 如果读取的是原始值 或者已经被读取过，直接返回
+  if (typeof value !== "object" || value === null || seen.has(value)) return;
+  seen.add(value);
+  // 暂不考虑数组等其他结构
+  // 使用 for in 获取对象的每一个属性 并递归的调用 traverse 进行处理
+  for (let k in value) {
+    traverse(value[k], seen);
+  }
+  return value;
 }
 
 // effect 用于注册副作用函数,这样副作用函数名字不用固定同时也可以添加匿名函数
@@ -145,22 +190,17 @@ function trigger(target, key) {
   });
 }
 
-// 测试功能 1 计算属性中的值修改后 计算属性返回的结果也得改变 主要是通过在改变值 trigger 函数中将 dirty 改为 true 就可以重新计算了
-// const sumRes = computed(() => obj.foo + obj.bar);
+// 测试功能1 watch 接收 getter 函数
+// watch(
+//   () => obj.foo,
+//   (newVal, oldVal) => {
+//     console.log(newVal, oldVal);
+//   }
+// );
 
-// console.log(sumRes.value);
-// console.log(sumRes.value);
-
-// obj.foo++;
-
-// console.log(sumRes.value);
-
-// 测试功能2：包含计算属性值得副作用函数不会在计算属性内的值修改后触发
-// 主要是因为 计算属性的值获取时不会触发收集依赖 处理方式就是在 计算属性值获取的时候收集依赖
-const sumRes = computed(() => obj.foo + obj.bar);
-
-effect(() => {
-  console.log(sumRes.value);
+// 测试功能2 watch 接收一个响应式数据
+watch(obj, (newVal, oldVal) => {
+  console.log("数据变化了");
 });
 
 obj.foo++;
