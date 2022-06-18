@@ -1,5 +1,5 @@
 /**
- * 4.10 立即执行的 watch 与回调执行时机
+ * 4.11 过期的副作用
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -53,11 +53,22 @@ function watch(source, cb, options = {}) {
     getter = () => traverse(source);
   }
   let oldValue, newValue;
+
+  // clean 用来存储用户注册的过期回调
+  let clean;
+  function onInvalidate(fn) {
+    // 将回调函数存储到 clean 中
+    clean = fn;
+  }
   const job = () => {
     // 在 scheduler 中执行新的副作用函数，得到的就是新值
     newValue = effectFn();
+    // 在调用回调函数 cb 之前，先调用过期回调
+    if (clean) {
+      clean();
+    }
     // 当数据变化时，调用回调函数 cb
-    cb(newValue, oldValue);
+    cb(newValue, oldValue, onInvalidate);
     // 更新一下旧值
     oldValue = newValue;
   };
@@ -204,15 +215,22 @@ function trigger(target, key) {
   });
 }
 
-// 测试功能1 添加选项参数 immediate
-watch(
-  obj,
-  (newVal, oldVal) => {
-    console.log("数据变化了");
-  },
-  {
-    immediate: true,
+// 测试功能1
+let finalData;
+watch(obj, async (newVal, oldVal, onInvalidate) => {
+  let expired = false;
+  onInvalidate(() => {
+    expired = true;
+  });
+  const res = await fetch("/api");
+
+  if (!expired) {
+    finalData = res;
   }
-);
+});
 
 obj.foo++;
+setTimeout(() => {
+  // 200ms 后做第二次修改
+  obj.foo++;
+}, 200);
