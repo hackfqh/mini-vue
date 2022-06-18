@@ -1,6 +1,5 @@
 /**
- * 4.9 watch 的实现原理
- * 所谓 watch 其本质就是 观测一个响应式数据，当数据发生变化时通知并执行相应的回调函数
+ * 4.10 立即执行的 watch 与回调执行时机
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -43,8 +42,9 @@ function computed(getter) {
  * watch
  * @param {*} source 可以是一个响应式数据，也可以是一个 getter 函数
  * @param {*} cb 响应式数据变化后执行的回调函数
+ * @param {*} options 可以添加 immediate 立即执行，也可以添加 flush 指定回调函数的执行时机
  */
-function watch(source, cb) {
+function watch(source, cb, options = {}) {
   let getter;
   //
   if (typeof source === "function") {
@@ -53,23 +53,37 @@ function watch(source, cb) {
     getter = () => traverse(source);
   }
   let oldValue, newValue;
+  const job = () => {
+    // 在 scheduler 中执行新的副作用函数，得到的就是新值
+    newValue = effectFn();
+    // 当数据变化时，调用回调函数 cb
+    cb(newValue, oldValue);
+    // 更新一下旧值
+    oldValue = newValue;
+  };
   const effectFn = effect(
     // 调用 traverse 递归的读取
     () => getter(),
     {
       lazy: true,
-      scheduler() {
-        // 在 scheduler 中执行新的副作用函数，得到的就是新值
-        newValue = effectFn();
-        // 当数据变化时，调用回调函数 cb
-        cb(newValue, oldValue);
-        // 更新一下旧值
-        oldValue = newValue;
+      // 使用 job 函数作为调度器函数
+      scheduler: () => {
+        // 在调度函数中判断 flush 是否为 post 如果是 将其放到微任务队列中执行
+        if (options.flush === "post") {
+          const p = Promise.resolve();
+          p.then(job);
+        } else {
+          job();
+        }
       },
     }
   );
-  // 手动调用副作用函数 拿到的就是旧值
-  oldValue = effectFn();
+  if (options.immediate) {
+    job();
+  } else {
+    // 手动调用副作用函数 拿到的就是旧值
+    oldValue = effectFn();
+  }
 }
 
 function traverse(value, seen = new Set()) {
@@ -190,17 +204,15 @@ function trigger(target, key) {
   });
 }
 
-// 测试功能1 watch 接收 getter 函数
-// watch(
-//   () => obj.foo,
-//   (newVal, oldVal) => {
-//     console.log(newVal, oldVal);
-//   }
-// );
-
-// 测试功能2 watch 接收一个响应式数据
-watch(obj, (newVal, oldVal) => {
-  console.log("数据变化了");
-});
+// 测试功能1 添加选项参数 immediate
+watch(
+  obj,
+  (newVal, oldVal) => {
+    console.log("数据变化了");
+  },
+  {
+    immediate: true,
+  }
+);
 
 obj.foo++;
