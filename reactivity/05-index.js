@@ -1,5 +1,8 @@
 /**
- * 5.3 如何代理 Object
+ * 5.4 合理的触发响应
+ * 主要解决了
+ *  1. 当值没有发生变化时，不需要触发响应,包括新值和旧值同时为NaN的情况
+ *  2. 属性值是从原型上继承的情况,修改值时只触发一次
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -154,47 +157,63 @@ const data = { text: "hello world", bar: 2, foo: 1 };
 const ITERATE_KEY = Symbol();
 
 // 对原始数据的代理
-const obj = new Proxy(data, {
-  // 拦截读取操作,接收第三个参数，代表谁在读取属性
-  get(target, key, receiver) {
-    // 将副作用函数 activeEffect 添加到桶中
-    track(target, key);
-    return Reflect.get(target, key, receiver);
-  },
-  set(target, key, newVal, receiver) {
-    // 如果属性不存在 说明是在添加新属性，否则就是在设置已有属性
-    const type = Object.prototype.hasOwnProperty.call(target, key)
-      ? "SET"
-      : "ADD";
-    // 设置属性值
-    const res = Reflect.set(target, key, newVal, receiver);
-    // 把副作用函数从桶里拿出来执行
-    trigger(target, key, type);
-    return res;
-  },
-  // 通过has 拦截函数实现对 in 操作符的代理 key in obj
-  has(target, key) {
-    track(target, key);
-    return Reflect.has(target, key);
-  },
-  // ownKeys 拦截函数拦截 Reflect.ownKeys 操作
-  ownKeys(target) {
-    // 将副作用函数与 ITERATE_KEY 相关联
-    track(target, ITERATE_KEY);
-    return Reflect.ownKeys(target);
-  },
-  // deleteProperty 拦函数处理 delete 操作
-  deleteProperty(target, key) {
-    // 检查被操作的属性是否是对象自己的属性
-    const hadKey = Object.prototype.hasOwnProperty.call(target, key);
-    const res = Reflect.deleteProperty(target, key);
-    // 只有被删除的属性是对象自己的属性并且删除成功删除时，才触发更新
-    if (res && hadKey) {
-      trigger(target, key, "DELETE");
-    }
-    return res;
-  },
-});
+function reactive(obj) {
+  return new Proxy(obj, {
+    // 拦截读取操作,接收第三个参数，代表谁在读取属性
+    get(target, key, receiver) {
+      // 代理对象可以通过 raw 属性访问原始数据
+      if (key === "raw") {
+        return target;
+      }
+
+      // 将副作用函数 activeEffect 添加到桶中
+      track(target, key);
+      return Reflect.get(target, key, receiver);
+    },
+    set(target, key, newVal, receiver) {
+      // 先获取旧值
+      const oldVal = target[key];
+      // 如果属性不存在 说明是在添加新属性，否则就是在设置已有属性
+      const type = Object.prototype.hasOwnProperty.call(target, key)
+        ? "SET"
+        : "ADD";
+      // 设置属性值
+      const res = Reflect.set(target, key, newVal, receiver);
+      // target  === receiver.raw 说明 receiver 就是 target 的代理对象
+      if (target === receiver.raw) {
+        // 比较新值和旧值，只有不全等,并且不都是NaN的时候才触发响应
+        if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
+          // 把副作用函数从桶里拿出来执行
+          trigger(target, key, type);
+        }
+      }
+
+      return res;
+    },
+    // 通过has 拦截函数实现对 in 操作符的代理 key in obj
+    has(target, key) {
+      track(target, key);
+      return Reflect.has(target, key);
+    },
+    // ownKeys 拦截函数拦截 Reflect.ownKeys 操作
+    ownKeys(target) {
+      // 将副作用函数与 ITERATE_KEY 相关联
+      track(target, ITERATE_KEY);
+      return Reflect.ownKeys(target);
+    },
+    // deleteProperty 拦函数处理 delete 操作
+    deleteProperty(target, key) {
+      // 检查被操作的属性是否是对象自己的属性
+      const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+      const res = Reflect.deleteProperty(target, key);
+      // 只有被删除的属性是对象自己的属性并且删除成功删除时，才触发更新
+      if (res && hadKey) {
+        trigger(target, key, "DELETE");
+      }
+      return res;
+    },
+  });
+}
 
 // 在 get 拦截函数内调用 track 函数追踪变化
 function track(target, key) {
@@ -259,20 +278,16 @@ function trigger(target, key, type) {
 }
 
 // 测试功能1
-// effect(() => {
-//   "foo" in obj;
-//   console.log("--代码执行了--");
-// });
+const obj = {};
+const proto = { bar: 1 };
+const child = reactive(obj);
+const parent = reactive(proto);
+// 使用 parent 作为 child 的原型
+Object.setPrototypeOf(child, parent);
 
-// obj.foo++;
-
-// 测试功能2
 effect(() => {
-  console.log("----");
-  for (const key in obj) {
-    console.log(key);
-  }
+  console.log(child.bar);
 });
 
-// obj.foo = 2;
-delete obj.foo;
+// 修改 child.bar 的值,会导致副作用函数重新执行两次
+child.bar = 2;
