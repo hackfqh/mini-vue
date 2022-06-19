@@ -1,5 +1,5 @@
 /**
- * 5.1 通过 Reflect 设置默认daili
+ * 5.3 如何代理 Object
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -151,6 +151,7 @@ const bucket = new WeakMap();
 
 // 原始数据
 const data = { text: "hello world", bar: 2, foo: 1 };
+const ITERATE_KEY = Symbol();
 
 // 对原始数据的代理
 const obj = new Proxy(data, {
@@ -160,11 +161,38 @@ const obj = new Proxy(data, {
     track(target, key);
     return Reflect.get(target, key, receiver);
   },
-  set(target, key, newVal) {
-    target[key] = newVal;
+  set(target, key, newVal, receiver) {
+    // 如果属性不存在 说明是在添加新属性，否则就是在设置已有属性
+    const type = Object.prototype.hasOwnProperty.call(target, key)
+      ? "SET"
+      : "ADD";
+    // 设置属性值
+    const res = Reflect.set(target, key, newVal, receiver);
     // 把副作用函数从桶里拿出来执行
-    trigger(target, key);
-    return true;
+    trigger(target, key, type);
+    return res;
+  },
+  // 通过has 拦截函数实现对 in 操作符的代理 key in obj
+  has(target, key) {
+    track(target, key);
+    return Reflect.has(target, key);
+  },
+  // ownKeys 拦截函数拦截 Reflect.ownKeys 操作
+  ownKeys(target) {
+    // 将副作用函数与 ITERATE_KEY 相关联
+    track(target, ITERATE_KEY);
+    return Reflect.ownKeys(target);
+  },
+  // deleteProperty 拦函数处理 delete 操作
+  deleteProperty(target, key) {
+    // 检查被操作的属性是否是对象自己的属性
+    const hadKey = Object.prototype.hasOwnProperty.call(target, key);
+    const res = Reflect.deleteProperty(target, key);
+    // 只有被删除的属性是对象自己的属性并且删除成功删除时，才触发更新
+    if (res && hadKey) {
+      trigger(target, key, "DELETE");
+    }
+    return res;
   },
 });
 
@@ -190,21 +218,36 @@ function track(target, key) {
   activeEffect.deps.push(deps);
 }
 
-function trigger(target, key) {
+function trigger(target, key, type) {
   // 根据 target 从桶里取得 depsMap
   const depsMap = bucket.get(target);
   if (!depsMap) return;
   // 根据 key 取得副作用函数并执行
   const effects = depsMap.get(key);
+  // 取得与 ITERATE_KEY 相关联的副作用函数
+  const iterateEffects = depsMap.get(ITERATE_KEY);
 
   // 主要是为了解决死循环，当effects 删除之后添加 就会造成死循环 通过新建一个 set，循环这个新的 set 就可以避免
   const effectsToRun = new Set();
-  effects.forEach((effectFn) => {
-    // 判断一下取出的副作用函数是否和当前正在执行的函数相同 相同的话就不执行了
-    if (effectFn !== activeEffect) {
-      effectsToRun.add(effectFn);
-    }
-  });
+  // 将与 key 相关联的副作用函数添加到 effectsToRun
+  effects &&
+    effects.forEach((effectFn) => {
+      // 判断一下取出的副作用函数是否和当前正在执行的函数相同 相同的话就不执行了
+      if (effectFn !== activeEffect) {
+        effectsToRun.add(effectFn);
+      }
+    });
+  if (type === "ADD" || type === "DELETE") {
+    // 将与 ITERATE_KEY 相关联的副作用函数也添加到 effectsToRun
+    iterateEffects &&
+      iterateEffects.forEach((effectFn) => {
+        // 判断一下取出的副作用函数是否和当前正在执行的函数相同 相同的话就不执行了
+        if (effectFn !== activeEffect) {
+          effectsToRun.add(effectFn);
+        }
+      });
+  }
+
   effectsToRun.forEach((effectFn) => {
     // 如果一个副作用函数存在调度器，则调用该调度器，并将副作用函数作为参数传递
     if (effectFn.options.scheduler) {
@@ -216,21 +259,20 @@ function trigger(target, key) {
 }
 
 // 测试功能1
-let finalData;
-watch(obj, async (newVal, oldVal, onInvalidate) => {
-  let expired = false;
-  onInvalidate(() => {
-    expired = true;
-  });
-  const res = await fetch("/api");
+// effect(() => {
+//   "foo" in obj;
+//   console.log("--代码执行了--");
+// });
 
-  if (!expired) {
-    finalData = res;
+// obj.foo++;
+
+// 测试功能2
+effect(() => {
+  console.log("----");
+  for (const key in obj) {
+    console.log(key);
   }
 });
 
-obj.foo++;
-setTimeout(() => {
-  // 200ms 后做第二次修改
-  obj.foo++;
-}, 200);
+// obj.foo = 2;
+delete obj.foo;
