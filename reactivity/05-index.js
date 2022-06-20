@@ -1,8 +1,6 @@
 /**
- * 5.4 合理的触发响应
- * 主要解决了
- *  1. 当值没有发生变化时，不需要触发响应,包括新值和旧值同时为NaN的情况
- *  2. 属性值是从原型上继承的情况,修改值时只触发一次
+ * 5.5 浅响应与深响应
+ * 浅响应就是对响应式对象的属性也是一个对象时，修改对象的内的值时不会触发副作用函数执行
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -156,8 +154,13 @@ const bucket = new WeakMap();
 const data = { text: "hello world", bar: 2, foo: 1 };
 const ITERATE_KEY = Symbol();
 
-// 对原始数据的代理
-function reactive(obj) {
+/**
+ *
+ * @param {*} obj 需要代理的原始数据
+ * @param {*} isShallow 代表是否是浅响应
+ * @returns
+ */
+function createReactive(obj, isShallow = false) {
   return new Proxy(obj, {
     // 拦截读取操作,接收第三个参数，代表谁在读取属性
     get(target, key, receiver) {
@@ -168,7 +171,16 @@ function reactive(obj) {
 
       // 将副作用函数 activeEffect 添加到桶中
       track(target, key);
-      return Reflect.get(target, key, receiver);
+      // 得到原始值结果，如果是对象，调用 reactive 将结果包装成响应式数据并返回
+      const res = Reflect.get(target, key, receiver);
+      if (isShallow) {
+        // 如果是浅响应，不递归对响应值处理，直接返回原始值结果
+        return res;
+      }
+      if (typeof res === "object" && res !== null) {
+        return reactive(res);
+      }
+      return res;
     },
     set(target, key, newVal, receiver) {
       // 先获取旧值
@@ -213,6 +225,15 @@ function reactive(obj) {
       return res;
     },
   });
+}
+// 深响应
+function reactive(obj) {
+  return createReactive(obj);
+}
+
+// 浅响应
+function shallowReactive(obj) {
+  return createReactive(obj, true);
 }
 
 // 在 get 拦截函数内调用 track 函数追踪变化
@@ -277,17 +298,20 @@ function trigger(target, key, type) {
   });
 }
 
-// 测试功能1
-const obj = {};
-const proto = { bar: 1 };
-const child = reactive(obj);
-const parent = reactive(proto);
-// 使用 parent 作为 child 的原型
-Object.setPrototypeOf(child, parent);
-
+// 测试功能1 深响应
+const obj = reactive({ foo: { bar: 1 } });
 effect(() => {
-  console.log(child.bar);
+  console.log(obj.foo.bar);
 });
 
-// 修改 child.bar 的值,会导致副作用函数重新执行两次
-child.bar = 2;
+obj.foo.bar = 2;
+
+// 测试功能2
+// const obj = shallowReactive({ foo: { bar: 1 } });
+// effect(() => {
+//   console.log(obj.foo.bar);
+// });
+
+// obj.foo = { bar: 2 };
+
+// obj.foo.bar = 3;
