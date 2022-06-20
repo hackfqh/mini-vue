@@ -1,9 +1,6 @@
 /**
- * 5.7.1 数组的索引与length
- * 当修改数组的索引对应的数据时 会触发 length 对应的副作用函数
- *  实现是 set  的时候判断一下目标对象是数组并且 key < length 就是 ADD 操作 然后再 trigger 判断类型是 ADD 同时是数组 则会触发 length 对应的副作用函数
- * 同理 修改数组的 length 时，会触发 length 元素后面的元素对应的副作用函数
- *  实现是 trigger 的时候判断一下目标对象是数组并且操作的 key 是 length 则会取到 大于等于 length 的 key 对应的副作用函数 添加到待执行数组中
+ * 5.7.2 遍历数组
+ * for in 和 for of
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -173,7 +170,8 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         return target;
       }
       // 非只读的时候才需要建立响应联系
-      if (!isReadonly) {
+      // 添加判断，如果 key 的类型是 symbol 则不进行追踪
+      if (!isReadonly && typeof key !== "symbol") {
         // 将副作用函数 activeEffect 添加到桶中
         track(target, key);
       }
@@ -227,7 +225,8 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
     // ownKeys 拦截函数拦截 Reflect.ownKeys 操作
     ownKeys(target) {
       // 将副作用函数与 ITERATE_KEY 相关联
-      track(target, ITERATE_KEY);
+      // 如果操作目标 target 是数组，则使用 length 属性作为 key 并建立响应联系
+      track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
       return Reflect.ownKeys(target);
     },
     // deleteProperty 拦函数处理 delete 操作
@@ -355,15 +354,25 @@ function trigger(target, key, type, newVal) {
 // const arr = reactive(["foo"]);
 
 // effect(() => {
-//   console.log(arr.length, "arr.length");
+//   console.log("----");
+//   for (const key in arr) {
+//     console.log(arr[key]);
+//   }
 // });
 
 // arr[1] = "bar";
 
-// 测试功能2 修改数组的 length 会影响对应 key 大于等于长度的索引值
-const arr = reactive(["foo"]);
+// arr.length = 0;
+
+// 测试功能2 for of
+const arr = reactive([1, 2, 3, 4]);
 effect(() => {
-  console.log(arr[0]);
+  console.log("---start---");
+  for (const val of arr) {
+    console.log(val);
+  }
+  console.log("---end---");
 });
 
+arr[1] = "bar";
 arr.length = 0;
