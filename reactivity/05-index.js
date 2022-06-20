@@ -1,6 +1,6 @@
 /**
- * 5.5 浅响应与深响应
- * 浅响应就是对响应式对象的属性也是一个对象时，修改对象的内的值时不会触发副作用函数执行
+ * 5.6 只读与浅只读
+ * 有些数据希望是只读的，当用户尝试修改只读数据时，会收到一条警告信息
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -158,9 +158,10 @@ const ITERATE_KEY = Symbol();
  *
  * @param {*} obj 需要代理的原始数据
  * @param {*} isShallow 代表是否是浅响应
+ * @param {*} isReadonly 代表数据是否是只读的
  * @returns
  */
-function createReactive(obj, isShallow = false) {
+function createReactive(obj, isShallow = false, isReadonly = false) {
   return new Proxy(obj, {
     // 拦截读取操作,接收第三个参数，代表谁在读取属性
     get(target, key, receiver) {
@@ -168,9 +169,12 @@ function createReactive(obj, isShallow = false) {
       if (key === "raw") {
         return target;
       }
+      // 非只读的时候才需要建立响应联系
+      if (!isReadonly) {
+        // 将副作用函数 activeEffect 添加到桶中
+        track(target, key);
+      }
 
-      // 将副作用函数 activeEffect 添加到桶中
-      track(target, key);
       // 得到原始值结果，如果是对象，调用 reactive 将结果包装成响应式数据并返回
       const res = Reflect.get(target, key, receiver);
       if (isShallow) {
@@ -178,11 +182,15 @@ function createReactive(obj, isShallow = false) {
         return res;
       }
       if (typeof res === "object" && res !== null) {
-        return reactive(res);
+        return isReadonly ? readonly(res) : reactive(res);
       }
       return res;
     },
     set(target, key, newVal, receiver) {
+      if (isReadonly) {
+        console.warn(`属性 ${key} 是只读的`);
+        return true;
+      }
       // 先获取旧值
       const oldVal = target[key];
       // 如果属性不存在 说明是在添加新属性，否则就是在设置已有属性
@@ -215,6 +223,10 @@ function createReactive(obj, isShallow = false) {
     },
     // deleteProperty 拦函数处理 delete 操作
     deleteProperty(target, key) {
+      if (isReadonly) {
+        console.warn(`属性 ${key} 是只读的`);
+        return true;
+      }
       // 检查被操作的属性是否是对象自己的属性
       const hadKey = Object.prototype.hasOwnProperty.call(target, key);
       const res = Reflect.deleteProperty(target, key);
@@ -234,6 +246,15 @@ function reactive(obj) {
 // 浅响应
 function shallowReactive(obj) {
   return createReactive(obj, true);
+}
+
+// 只读
+function readonly(obj) {
+  return createReactive(obj, false, true);
+}
+// 浅只读
+function shallowReadonly(obj) {
+  return createReactive(obj, true, true);
 }
 
 // 在 get 拦截函数内调用 track 函数追踪变化
@@ -299,19 +320,7 @@ function trigger(target, key, type) {
 }
 
 // 测试功能1 深响应
-const obj = reactive({ foo: { bar: 1 } });
-effect(() => {
-  console.log(obj.foo.bar);
-});
+// const obj = readonly({ foo: { bar: 1 } });
+const obj = shallowReadonly({ foo: { bar: 1 } });
 
 obj.foo.bar = 2;
-
-// 测试功能2
-// const obj = shallowReactive({ foo: { bar: 1 } });
-// effect(() => {
-//   console.log(obj.foo.bar);
-// });
-
-// obj.foo = { bar: 2 };
-
-// obj.foo.bar = 3;
