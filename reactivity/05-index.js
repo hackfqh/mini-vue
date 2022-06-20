@@ -1,6 +1,9 @@
 /**
- * 5.6 只读与浅只读
- * 有些数据希望是只读的，当用户尝试修改只读数据时，会收到一条警告信息
+ * 5.7.1 数组的索引与length
+ * 当修改数组的索引对应的数据时 会触发 length 对应的副作用函数
+ *  实现是 set  的时候判断一下目标对象是数组并且 key < length 就是 ADD 操作 然后再 trigger 判断类型是 ADD 同时是数组 则会触发 length 对应的副作用函数
+ * 同理 修改数组的 length 时，会触发 length 元素后面的元素对应的副作用函数
+ *  实现是 trigger 的时候判断一下目标对象是数组并且操作的 key 是 length 则会取到 大于等于 length 的 key 对应的副作用函数 添加到待执行数组中
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -194,7 +197,13 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       // 先获取旧值
       const oldVal = target[key];
       // 如果属性不存在 说明是在添加新属性，否则就是在设置已有属性
-      const type = Object.prototype.hasOwnProperty.call(target, key)
+      const type = Array.isArray(target)
+        ? // 如果代理目标是数组，检测被设置的索引值是否小于数组长度
+          // 如果是 就视作 SET 操作，否则就是 ADD 操作
+          Number(key) < target.length
+          ? "SET"
+          : "ADD"
+        : Object.prototype.hasOwnProperty.call(target, key)
         ? "SET"
         : "ADD";
       // 设置属性值
@@ -204,7 +213,7 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         // 比较新值和旧值，只有不全等,并且不都是NaN的时候才触发响应
         if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
           // 把副作用函数从桶里拿出来执行
-          trigger(target, key, type);
+          trigger(target, key, type, newVal);
         }
       }
 
@@ -279,7 +288,7 @@ function track(target, key) {
   activeEffect.deps.push(deps);
 }
 
-function trigger(target, key, type) {
+function trigger(target, key, type, newVal) {
   // 根据 target 从桶里取得 depsMap
   const depsMap = bucket.get(target);
   if (!depsMap) return;
@@ -298,7 +307,30 @@ function trigger(target, key, type) {
         effectsToRun.add(effectFn);
       }
     });
-  if (type === "ADD" || type === "DELETE") {
+  // 如果操作目标是数组，并且修改了数组的 length
+  if (Array.isArray(target) && key === "length") {
+    // 对于索引大于或等于新的 length 值得元素
+    // 需要把所有相关联的副作用函数取出并添加到 effectsToRun 中待执行
+    depsMap.forEach((effects, key) => {
+      if (key >= newVal) {
+        effects.forEach((effectFn) => {
+          if (effectFn !== activeEffect) {
+            effectsToRun.add(effectFn);
+          }
+        });
+      }
+    });
+  }
+  // 当操作类型是 ADD 并且目标对象是数组时，，应该取出并执行那些与 length 属性相关联的副作用函数
+  if (type === "ADD" && Array.isArray(target)) {
+    const lengthEffects = depsMap.get("length");
+    lengthEffects &&
+      lengthEffects.forEach((effectFn) => {
+        if (effectFn !== activeEffect) {
+          effectsToRun.add(effectFn);
+        }
+      });
+  } else if (type === "ADD" || type === "DELETE") {
     // 将与 ITERATE_KEY 相关联的副作用函数也添加到 effectsToRun
     iterateEffects &&
       iterateEffects.forEach((effectFn) => {
@@ -319,8 +351,19 @@ function trigger(target, key, type) {
   });
 }
 
-// 测试功能1 深响应
-// const obj = readonly({ foo: { bar: 1 } });
-const obj = shallowReadonly({ foo: { bar: 1 } });
+// 测试功能1
+// const arr = reactive(["foo"]);
 
-obj.foo.bar = 2;
+// effect(() => {
+//   console.log(arr.length, "arr.length");
+// });
+
+// arr[1] = "bar";
+
+// 测试功能2 修改数组的 length 会影响对应 key 大于等于长度的索引值
+const arr = reactive(["foo"]);
+effect(() => {
+  console.log(arr[0]);
+});
+
+arr.length = 0;
