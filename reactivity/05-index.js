@@ -1,10 +1,7 @@
 /**
- * 5.7.3 数组的查找方法
- * 主要包括 include indexOf lastIndexOf
- *  测试功能1: 如果是对一个对象数组添加响应式 通过 include 判断的时候 由于内部的对象也会被转换成响应式数据 导致不是同一个代理对象
- *    解决办法就是存储一个原始对象到代理对象的映射
- *  测试功能2: 代理对象 includes 查找对象时找不到 原因是 includes 内部的this指向的是代理对象arr 并且在获取数组元素时使用的也是代理对象
- *    解决方法: 先在代理对象上查找，找不到的话去原始对象上找
+ * 5.7.4 隐式修改数组长度的原型方法
+ * 主要包括 push pop shift unshift splice
+ *  这些方法在向数组添加元素时 既会读取数组的 length 也会设置数组的 length 属性 两个独立的副作用函数执行时 会造成死循环
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -173,6 +170,18 @@ const arrayInstrumentations = {};
   };
 });
 
+let shouldTrack = true;
+["push", "pop", "shift", "unshift", "splice"].forEach((method) => {
+  const originMethod = Array.prototype[method];
+  arrayInstrumentations[method] = function (...args) {
+    // 在调用原始方法之前 禁止追踪
+    shouldTrack = false;
+    let res = originMethod.apply(this, args);
+    shouldTrack = true;
+    return res;
+  };
+});
+
 /**
  *
  * @param {*} obj 需要代理的原始数据
@@ -303,7 +312,7 @@ function shallowReadonly(obj) {
 
 // 在 get 拦截函数内调用 track 函数追踪变化
 function track(target, key) {
-  if (!activeEffect) return;
+  if (!activeEffect || !shouldTrack) return;
   // 根据 target 从桶中取得 depsMap, 它是一个 Map 类型： key: deps
   let depsMap = bucket.get(target);
   if (!depsMap) {
@@ -387,13 +396,11 @@ function trigger(target, key, type, newVal) {
 }
 
 // 测试功能1
-// const obj = {};
-// const arr = reactive([obj]);
+const arr = reactive([]);
+effect(() => {
+  arr.push(1);
+});
 
-// console.log(arr.includes(arr[0]));
-
-// 测试功能2
-const obj = {};
-const arr = reactive([obj]);
-
-console.log(arr.includes(obj));
+effect(() => {
+  arr.push(1);
+});
