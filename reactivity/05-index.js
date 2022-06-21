@@ -1,6 +1,10 @@
 /**
- * 5.7.2 遍历数组
- * for in 和 for of
+ * 5.7.3 数组的查找方法
+ * 主要包括 include indexOf lastIndexOf
+ *  测试功能1: 如果是对一个对象数组添加响应式 通过 include 判断的时候 由于内部的对象也会被转换成响应式数据 导致不是同一个代理对象
+ *    解决办法就是存储一个原始对象到代理对象的映射
+ *  测试功能2: 代理对象 includes 查找对象时找不到 原因是 includes 内部的this指向的是代理对象arr 并且在获取数组元素时使用的也是代理对象
+ *    解决方法: 先在代理对象上查找，找不到的话去原始对象上找
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -154,6 +158,21 @@ const bucket = new WeakMap();
 const data = { text: "hello world", bar: 2, foo: 1 };
 const ITERATE_KEY = Symbol();
 
+const arrayInstrumentations = {};
+
+["includes", "indexOf", "lastIndexOf"].forEach((method) => {
+  const originMethod = Array.prototype[method];
+  arrayInstrumentations[method] = function (...args) {
+    // this 是代理对象，先在代理对象中查找
+    let res = originMethod.apply(this, args);
+    if (res === false || res === -1) {
+      // 如果没有找到 通过 this.raw 拿到原始值，再去原始值里面查找同时修改 res
+      res = originMethod.apply(this.raw, args);
+    }
+    return res;
+  };
+});
+
 /**
  *
  * @param {*} obj 需要代理的原始数据
@@ -169,6 +188,13 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       if (key === "raw") {
         return target;
       }
+
+      // 如果操作的是数组，并且 key 在 arrayInstrumentations 上
+      // 那么返回定义在 arrayInstrumentations 上的值
+      if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
+        return Reflect.get(arrayInstrumentations, key, receiver);
+      }
+
       // 非只读的时候才需要建立响应联系
       // 添加判断，如果 key 的类型是 symbol 则不进行追踪
       if (!isReadonly && typeof key !== "symbol") {
@@ -246,9 +272,19 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
     },
   });
 }
+
+// 定义一个 Map 实例，存储原始对象到代理对象的映射
+const reactiveMap = new Map();
+
 // 深响应
 function reactive(obj) {
-  return createReactive(obj);
+  // 优先通过原始对象 obj 寻找之前创建的代理对象，如果找到了 直接返回已有的代理对象
+  const existionProxy = reactiveMap.get(obj);
+  if (existionProxy) return existionProxy;
+  // 否则创建新的代理对象
+  const proxy = createReactive(obj);
+  reactiveMap.set(obj, proxy);
+  return proxy;
 }
 
 // 浅响应
@@ -351,28 +387,13 @@ function trigger(target, key, type, newVal) {
 }
 
 // 测试功能1
-// const arr = reactive(["foo"]);
+// const obj = {};
+// const arr = reactive([obj]);
 
-// effect(() => {
-//   console.log("----");
-//   for (const key in arr) {
-//     console.log(arr[key]);
-//   }
-// });
+// console.log(arr.includes(arr[0]));
 
-// arr[1] = "bar";
+// 测试功能2
+const obj = {};
+const arr = reactive([obj]);
 
-// arr.length = 0;
-
-// 测试功能2 for of
-const arr = reactive([1, 2, 3, 4]);
-effect(() => {
-  console.log("---start---");
-  for (const val of arr) {
-    console.log(val);
-  }
-  console.log("---end---");
-});
-
-arr[1] = "bar";
-arr.length = 0;
+console.log(arr.includes(obj));
