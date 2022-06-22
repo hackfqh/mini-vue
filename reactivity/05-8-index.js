@@ -1,6 +1,7 @@
 /**
- * 5.8.1 如何代理 Set 和 Map
- *  主要解决了 代理 Set 和 Map 类型时 代理对象 p.size 和 p.delete 的错误
+ * 5.8.3 避免污染全局数据
+ *  使用 set 的时候可能给原始数据中添加了响应式数据，这种行为就是数据污染
+ *    解决办法就是判断获取一下原始数据 获取不到的时候说明当前数据就是原始数据 直接设置即可
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -181,6 +182,54 @@ let shouldTrack = true;
   };
 });
 
+// 定义一个对象 将自定义的 add 方法定义到该对象下
+const mutableInstrumentations = {
+  add(key) {
+    const target = this.raw;
+    const hadKey = target.has(key);
+    const res = target.add(key);
+    if (!hadKey) {
+      trigger(target, key, "ADD");
+    }
+    return res;
+  },
+  delete(key) {
+    const target = this.raw;
+    const hadKey = target.has(key);
+    const res = target.delete(key);
+    if (hadKey) {
+      trigger(target, key, "DELETE");
+    }
+    return res;
+  },
+  get(key) {
+    const target = this.raw;
+    const hadKey = target.has(key);
+    track(target, key);
+    if (hadKey) {
+      const res = target.get(key);
+      return typeof res === "object" ? reactive(res) : res;
+    }
+  },
+  set(key, value) {
+    const target = this.raw;
+    const hadKey = target.has(key);
+    const oldValue = target.get(key);
+    // 获取原始数据，由于 value 本身可能已经是原始数据，所以此时 value.raw 不存在，则直接使用 value
+    const rawValue = value.raw || value;
+    target.set(key, rawValue);
+    // 如果不存在，则说明是 ADD 类型的操作，意味着新增
+    if (!hadKey) {
+      trigger(target, key, "ADD");
+    } else if (
+      oldValue !== value ||
+      (oldValue === oldValue && value === value)
+    ) {
+      trigger(target, key, "SET");
+    }
+  },
+};
+
 /**
  * Set 和 Map 对应的方法
  * @param {*} obj 需要代理的原始数据
@@ -197,12 +246,13 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         return target;
       }
       if (key === "size") {
+        track(target, ITERATE_KEY);
         // 如果读取的是 size 属性 通过指定第三个参数 receiver 为原始对象 target 修复 set 类型代理后获取size 的问题
         return Reflect.get(target, key, target);
       }
 
       // 将方法与原始数据对象的target 方法绑定后返回
-      return target[key].bind(target);
+      return mutableInstrumentations[key];
     },
     set(target, key, newVal, receiver) {
       if (isReadonly) {
