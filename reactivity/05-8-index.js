@@ -1,7 +1,6 @@
 /**
- * 5.8.3 避免污染全局数据
- *  使用 set 的时候可能给原始数据中添加了响应式数据，这种行为就是数据污染
- *    解决办法就是判断获取一下原始数据 获取不到的时候说明当前数据就是原始数据 直接设置即可
+ * 5.8.4 处理 forEach
+ *  重写了 forEach 方法 同时对 forEach 循环时候的 value 和 key 做处理成响应式数据
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -228,6 +227,18 @@ const mutableInstrumentations = {
       trigger(target, key, "SET");
     }
   },
+  // 接收第二个参数 该参数用来指定 callback 函数执行时候的 this
+  forEach(callback, thisArg) {
+    // wrap 函数用来把可代理的值转换成响应式数据
+    const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+    const target = this.raw;
+    track(target, ITERATE_KEY);
+    // 通过原始数据对象调用 forEach 方法，并把 callback 传递过去
+    target.forEach((v, k) => {
+      // 手动调用 callback ，用 wrap 包裹 value 和 key 后再传给 callback
+      callback.call(thisArg, wrap(v), wrap(k), this);
+    });
+  },
 };
 
 /**
@@ -406,7 +417,14 @@ function trigger(target, key, type, newVal) {
           effectsToRun.add(effectFn);
         }
       });
-  } else if (type === "ADD" || type === "DELETE") {
+  } else if (
+    type === "ADD" ||
+    type === "DELETE" ||
+    // 如果操作类型是 SET  并且目标对象是 Map 类型的数据
+    // 也应该触发 iterateEffects 相关联的副作用函数执行
+    (type === "SET" &&
+      Object.prototype.toString.call(target) === "[object Map]")
+  ) {
     // 将与 ITERATE_KEY 相关联的副作用函数也添加到 effectsToRun
     iterateEffects &&
       iterateEffects.forEach((effectFn) => {
