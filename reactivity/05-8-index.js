@@ -1,6 +1,6 @@
 /**
- * 5.8.5 迭代器方法
- *  entries keys values
+ * 5.8.6 values 与 keys 方法
+ *
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -241,6 +241,8 @@ const mutableInstrumentations = {
   },
   [Symbol.iterator]: iterationMethod,
   entries: iterationMethod,
+  values: valuesIterationMethod,
+  keys: keysIterationMethod,
 };
 
 function iterationMethod() {
@@ -255,6 +257,52 @@ function iterationMethod() {
       const { value, done } = itr.next();
       return {
         value: value ? [wrap(value[0]), wrap(value[1])] : value,
+        done,
+      };
+    },
+    // 实现可迭代协议
+    [Symbol.iterator]() {
+      return this;
+    },
+  };
+}
+
+function valuesIterationMethod() {
+  const target = this.raw;
+  // 获取原始迭代器方法
+  const itr = target.values();
+  const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+  track(target, ITERATE_KEY);
+  // 返回一个自定义迭代器
+  return {
+    next() {
+      const { value, done } = itr.next();
+      return {
+        value: wrap(value),
+        done,
+      };
+    },
+    // 实现可迭代协议
+    [Symbol.iterator]() {
+      return this;
+    },
+  };
+}
+
+const MAP_KEY_ITERATE_KEY = Symbol();
+
+function keysIterationMethod() {
+  const target = this.raw;
+  // 获取原始迭代器方法
+  const itr = target.keys();
+  const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+  track(target, MAP_KEY_ITERATE_KEY);
+  // 返回一个自定义迭代器
+  return {
+    next() {
+      const { value, done } = itr.next();
+      return {
+        value: wrap(value),
         done,
       };
     },
