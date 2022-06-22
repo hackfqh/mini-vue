@@ -1,6 +1,6 @@
 /**
- * 5.8.4 处理 forEach
- *  重写了 forEach 方法 同时对 forEach 循环时候的 value 和 key 做处理成响应式数据
+ * 5.8.5 迭代器方法
+ *  entries keys values
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -239,7 +239,31 @@ const mutableInstrumentations = {
       callback.call(thisArg, wrap(v), wrap(k), this);
     });
   },
+  [Symbol.iterator]: iterationMethod,
+  entries: iterationMethod,
 };
+
+function iterationMethod() {
+  const target = this.raw;
+  // 获取原始迭代器方法
+  const itr = target[Symbol.iterator]();
+  const wrap = (val) => (typeof val === "object" ? reactive(val) : val);
+  track(target, ITERATE_KEY);
+  // 返回一个自定义迭代器
+  return {
+    next() {
+      const { value, done } = itr.next();
+      return {
+        value: value ? [wrap(value[0]), wrap(value[1])] : value,
+        done,
+      };
+    },
+    // 实现可迭代协议
+    [Symbol.iterator]() {
+      return this;
+    },
+  };
+}
 
 /**
  * Set 和 Map 对应的方法
