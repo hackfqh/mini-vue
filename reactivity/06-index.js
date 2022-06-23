@@ -1,6 +1,6 @@
 /**
- * 6.2 响应丢失问题
- *  通过解构后的对象属性不再具有响应式属性
+ * 6.3 自动脱 ref
+ *  解决只能通过 .value 访问属性的问题
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -429,12 +429,33 @@ function toRefs(obj) {
   return ret;
 }
 
-// 测试功能1
+function proxyRefs(target) {
+  return new Proxy(target, {
+    get(target, key, receiver) {
+      const value = Reflect.get(target, key, receiver);
+      // 自动脱 ref 实现：如果读取的值是 ref 则返回它的 value 属性值
+      return value.__v_isRef ? value.value : value;
+    },
+    set(target, key, newValue, receiver) {
+      // 获取到真实值
+      const value = target[key];
+      if (value.__v_isRef) {
+        value.value = newValue;
+        return true;
+      }
+      return Reflect.set(target, key, newValue, receiver);
+    },
+  });
+}
+
+// 测试功能1 获取值
 const obj = reactive({ foo: 1, bar: 2 });
 
-const newObj = { ...toRefs(obj) };
+const newObj = proxyRefs({ ...toRefs(obj) });
 
-console.log(newObj.foo.value);
-console.log(newObj.bar.value);
-newObj.bar.value = 3;
-console.log(newObj.bar.value);
+// console.log(newObj.foo);
+// console.log(newObj.bar);
+
+// 测试功能2 set 值
+newObj.foo = 3;
+console.log(newObj.foo);
