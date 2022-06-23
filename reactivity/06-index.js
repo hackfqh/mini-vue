@@ -1,7 +1,6 @@
 /**
- * 5.7.4 隐式修改数组长度的原型方法
- * 主要包括 push pop shift unshift splice
- *  这些方法在向数组添加元素时 既会读取数组的 length 也会设置数组的 length 属性 两个独立的副作用函数执行时 会造成死循环
+ * 6.2 响应丢失问题
+ *  通过解构后的对象属性不再具有响应式属性
  */
 
 // 用一个全局变量存储被注册的副作用函数
@@ -407,11 +406,35 @@ function ref(val) {
   return reactive(wrapper);
 }
 
+function toRef(obj, key) {
+  const wrapper = {
+    get value() {
+      return obj[key];
+    },
+    set value(val) {
+      obj[key] = val;
+    },
+  };
+  Object.defineProperty(wrapper, "__v_isRef", {
+    value: true,
+  });
+  return wrapper;
+}
+
+function toRefs(obj) {
+  const ret = {};
+  for (const key in obj) {
+    ret[key] = toRef(obj, key);
+  }
+  return ret;
+}
+
 // 测试功能1
-const refVal = ref(1);
+const obj = reactive({ foo: 1, bar: 2 });
 
-effect(() => {
-  console.log(refVal.value);
-});
+const newObj = { ...toRefs(obj) };
 
-refVal.value = 2;
+console.log(newObj.foo.value);
+console.log(newObj.bar.value);
+newObj.bar.value = 3;
+console.log(newObj.bar.value);
