@@ -1,9 +1,7 @@
 /**
- * 8.3 正确的设置元素属性
- *  主要通过函数 shouldSetAsProps 先判断一个当前属性在 DOM property 上面有没有值 或者只读类型的不能直接修改比如 form 属性
- *    有的话判断一下类型是不布尔值并且值为空 如果是就将值设置为 true 否者设置为获取到的值
- *    没有的话通过 setAttribute 设置属性值
- *  为了把属性设置成与平台无关 通过 options 传入 patchProps 函数处理
+ * 8.4 class 的处理
+ *  需要先封装一个函数 normalizeClass 将不同类型的 class 值正常化为字符串
+ *  然后 patchProps 中判断 key 是 class 时 通过className 处理（className 性能最好）
  */
 
 function createRenderer(options) {
@@ -84,8 +82,12 @@ const renderer = createRenderer({
   },
   // 将属性设置相关操作封装到 patchProps 函数中，并作为渲染器选项传递
   patchProps(el, key, preValue, nextValue) {
+    // 对 class 进行特殊处理
+    if (key === "class") {
+      el.className = nextValue || "";
+    }
     //  使用 shouldSetAsProps 判断是否应该作为 DOM property 设置
-    if (shouldSetAsProps(el, key, nextValue)) {
+    else if (shouldSetAsProps(el, key, nextValue)) {
       // 获取该 DOM attribute 的类型
       const type = typeof el[key];
       // 如果是布尔值并且 value 是空字符串，则将值矫正为 true
