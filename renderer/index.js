@@ -1,11 +1,14 @@
 /**
- * 8.1 挂载子节点和元素的属性
- *
+ * 8.3 正确的设置元素属性
+ *  主要通过函数 shouldSetAsProps 先判断一个当前属性在 DOM property 上面有没有值 或者只读类型的不能直接修改比如 form 属性
+ *    有的话判断一下类型是不布尔值并且值为空 如果是就将值设置为 true 否者设置为获取到的值
+ *    没有的话通过 setAttribute 设置属性值
+ *  为了把属性设置成与平台无关 通过 options 传入 patchProps 函数处理
  */
 
 function createRenderer(options) {
   // 通过 options 得到操作 DOM 的API
-  const { createElement, setElementText, insert } = options;
+  const { createElement, setElementText, insert, patchProps } = options;
 
   /**
    * @param {*} n1 旧的 vnode
@@ -18,6 +21,7 @@ function createRenderer(options) {
       mountElement(n2, container);
     }
   }
+
   function mountElement(vnode, container) {
     // 调用 createElement 创建元素
     const el = createElement(vnode.type);
@@ -34,10 +38,8 @@ function createRenderer(options) {
     // 如果 props 存在才处理
     if (vnode.props) {
       for (const key in vnode.props) {
-        // 调用 setAttribute 将属性设置到元素上
-        el.setAttribute(key, vnode.props[key]);
-        // 直接通过 DOM 设置，这两种方式都存在缺陷
-        // el[key] = vnode.props[key]
+        // 调用 patchProps 函数
+        patchProps(el, key, null, vnode.props[key]);
       }
     }
 
@@ -61,7 +63,10 @@ function createRenderer(options) {
     render,
   };
 }
-
+function shouldSetAsProps(el, key, value) {
+  if (key === "form" && el.tagName === "INPUT") return false;
+  return key in el;
+}
 // 测试功能
 const renderer = createRenderer({
   createElement(tag) {
@@ -72,10 +77,27 @@ const renderer = createRenderer({
     console.log(`设置元素的文本内容为${text}`);
     el.textContent = text;
   },
-  insert(el, parent) {
+  insert(el, parent, anchor = null) {
     console.log("插入元素");
     // parent.children = el;
-    parent.appendChild(el);
+    parent.insertBefore(el, anchor);
+  },
+  // 将属性设置相关操作封装到 patchProps 函数中，并作为渲染器选项传递
+  patchProps(el, key, preValue, nextValue) {
+    //  使用 shouldSetAsProps 判断是否应该作为 DOM property 设置
+    if (shouldSetAsProps(el, key, nextValue)) {
+      // 获取该 DOM attribute 的类型
+      const type = typeof el[key];
+      // 如果是布尔值并且 value 是空字符串，则将值矫正为 true
+      if (type === "boolean" && nextValue === "") {
+        el[key] = true;
+      } else {
+        el[key] = nextValue;
+      }
+    } else {
+      // 如果要设置的属性没有对应的 DOM property ,则使用 setAttribute 设置属性
+      el.setAttribute(key, nextValue);
+    }
   },
 });
 
