@@ -1,7 +1,6 @@
 /**
- * 8.4 class 的处理
- *  需要先封装一个函数 normalizeClass 将不同类型的 class 值正常化为字符串
- *  然后 patchProps 中判断 key 是 class 时 通过className 处理（className 性能最好）
+ * 8.5 卸载操作
+ *  render(null, container) 当传入的 vnode 为 null 时说明是卸载操作
  */
 
 function createRenderer(options) {
@@ -21,8 +20,8 @@ function createRenderer(options) {
   }
 
   function mountElement(vnode, container) {
-    // 调用 createElement 创建元素
-    const el = createElement(vnode.type);
+    // 调用 createElement 创建元素,同时让 vnode.el 引用真实节点
+    const el = (vnode.el = createElement(vnode.type));
     if (typeof vnode.children === "string") {
       // 调用 setElementText 设置元素的文本节点
       setElementText(el, vnode.children);
@@ -50,12 +49,17 @@ function createRenderer(options) {
       patch(container._vnode, vnode, container);
     } else {
       if (container._vnode) {
-        // 旧 vnode 存在 新 vnode 不存在 说明是卸载操作
-        // 只需将 container 的 DOM 清空
-        container.innerHTML = ""; // 有问题 暂时这么处理
+        // 调用 unmount 卸载 vnode
+        unmount(container.v_node);
       }
     }
     container._vnode = vnode;
+  }
+  function unmount(vnode) {
+    const parent = vnode.el.parentNode;
+    if (parent) {
+      parent.removeChild(vnode.el);
+    }
   }
   return {
     render,
