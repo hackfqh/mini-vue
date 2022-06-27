@@ -1,6 +1,7 @@
 /**
- * 8.5 卸载操作
- *  render(null, container) 当传入的 vnode 为 null 时说明是卸载操作
+ * 8.6 区分 vnode 的类型
+ *  一是判断新旧 vnode 类型是否相等  相等了才需要 patch 不相等需要先卸载旧 vnode 重新挂载新的 vnode
+ *  二是根据类型判断后续需要进行怎样的挂载或卸载操作
  */
 
 function createRenderer(options) {
@@ -13,9 +14,22 @@ function createRenderer(options) {
    * @param {*} container
    */
   function patch(n1, n2, container) {
-    // 如果 n1 不存在，意味着挂载，调用 mountElement 函数完成挂载
-    if (!n1) {
-      mountElement(n2, container);
+    // 如果 n1 存在则对比 n1 和 n2 的类型
+    if (n1.type !== n2.type) {
+      // 如果新旧 vnode  的类型不同，则直接将旧 vnode 卸载
+      unmount(n1);
+      n1 = nulll;
+    }
+    const { type } = n2;
+    if (typeof type === "string") {
+      // 如果 n1 不存在，意味着挂载，调用 mountElement 函数完成挂载
+      if (!n1) {
+        mountElement(n2, container);
+      } else {
+        patchElement(n1, n2);
+      }
+    } else if (typeof type === "object") {
+      // 如果 n2 的类型是对象 则它描述的是组件
     }
   }
 
