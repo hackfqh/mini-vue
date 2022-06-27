@@ -1,6 +1,6 @@
 /**
- * 7.3 自定义渲染器
- *  主要是通过配置的方式将创建或是修改添加元素等的方式动态的传入
+ * 8.1 挂载子节点和元素的属性
+ *
  */
 
 function createRenderer(options) {
@@ -24,7 +24,23 @@ function createRenderer(options) {
     if (typeof vnode.children === "string") {
       // 调用 setElementText 设置元素的文本节点
       setElementText(el, vnode.children);
+    } else if (Array.isArray(vnode.children)) {
+      // 如果 children 是数组，则遍历每一个子节点，并调用 patch 函数挂载它们
+      vnode.children.forEach((child) => {
+        patch(null, child, el);
+      });
     }
+
+    // 如果 props 存在才处理
+    if (vnode.props) {
+      for (const key in vnode.props) {
+        // 调用 setAttribute 将属性设置到元素上
+        el.setAttribute(key, vnode.props[key]);
+        // 直接通过 DOM 设置，这两种方式都存在缺陷
+        // el[key] = vnode.props[key]
+      }
+    }
+
     // 调用 insert 函数将元素插入到容器内
     insert(el, container);
   }
@@ -50,7 +66,7 @@ function createRenderer(options) {
 const renderer = createRenderer({
   createElement(tag) {
     console.log(`创建元素${tag}`);
-    return { tag };
+    return document.createElement(tag);
   },
   setElementText(el, text) {
     console.log(`设置元素的文本内容为${text}`);
@@ -58,14 +74,23 @@ const renderer = createRenderer({
   },
   insert(el, parent) {
     console.log("插入元素");
-    parent.children = el;
+    // parent.children = el;
+    parent.appendChild(el);
   },
 });
 
 const vnode = {
-  type: "h1",
-  children: "hello",
+  type: "div",
+  props: {
+    id: "foo",
+  },
+  children: [
+    {
+      type: "p",
+      children: "hello ",
+    },
+  ],
 };
 
-const container = { type: "root" };
+const container = document.getElementById("app");
 renderer.render(vnode, container);
