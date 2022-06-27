@@ -1,7 +1,6 @@
 /**
- * 8.6 区分 vnode 的类型
- *  一是判断新旧 vnode 类型是否相等  相等了才需要 patch 不相等需要先卸载旧 vnode 重新挂载新的 vnode
- *  二是根据类型判断后续需要进行怎样的挂载或卸载操作
+ * 8.7 事件的处理
+ *
  */
 
 function createRenderer(options) {
@@ -100,6 +99,37 @@ const renderer = createRenderer({
   },
   // 将属性设置相关操作封装到 patchProps 函数中，并作为渲染器选项传递
   patchProps(el, key, preValue, nextValue) {
+    // 匹配以 on 开头的属性视其为事件
+    if (/^on/.test(key)) {
+      // 添加多个事件 所以需要保存成对象
+      const invokers = el._vei || (el._vei = {});
+      // 获取为该元素伪造的事件处理函数 invoker
+      let invoker = invokers[key];
+      const name = key.slice(2).toLowerCase();
+      if (nextValue) {
+        if (!invoker) {
+          // 如果没有 invoker 则将一个伪造的 invoker 缓存到 el._vei 中
+          invoker = el._vei[key] = (e) => {
+            // 如果 invoker.value  是数组，则遍历它并逐步调用事件处理函数,主要是处理同一个事件绑定的多个处理函数
+            if (Array.isArray(invoker.value)) {
+              invoker.value.forEach((fn) => fn(e));
+            } else {
+              invoker.value(e);
+            }
+          };
+          // 将真正的时间处理函数赋值给 invoker.value
+          invoker.value = nextValue;
+          // 绑定 invoker 作为事件处理函数
+          el.addEventListener(name, invoker);
+        } else {
+          // 如果 invoker 存在，意味着更新，只需要更新 invoker.value 就可以
+          invoker.value = nextValue;
+        }
+      } else {
+        // 新的事件绑定函数不存在 且之前绑定的 invoker 存在 则移除绑定
+        el.removeEventListener(name, invoker);
+      }
+    }
     // 对 class 进行特殊处理
     if (key === "class") {
       el.className = nextValue || "";
@@ -125,6 +155,9 @@ const vnode = {
   type: "div",
   props: {
     id: "foo",
+    onclick: () => {
+      console.log("onClick");
+    },
   },
   children: [
     {
