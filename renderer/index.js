@@ -1,5 +1,7 @@
 /**
- * 8.7 事件的处理
+ * 8.8 事件冒泡与更新时机问题
+ *  为父元素绑定事件处理函数发生在事件冒泡之前
+ *    解决的办法 就是 屏蔽所有的绑定时间晚于事件触发时间的事件处理函数的执行
  *
  */
 
@@ -110,6 +112,9 @@ const renderer = createRenderer({
         if (!invoker) {
           // 如果没有 invoker 则将一个伪造的 invoker 缓存到 el._vei 中
           invoker = el._vei[key] = (e) => {
+            // e.timeStamp 是事件发生事件
+            // 如果事件的发生时间早于事件处理函数绑定的时间，则不执行事件处理函数
+            if (e.timeStamp < invoker.attached) return;
             // 如果 invoker.value  是数组，则遍历它并逐步调用事件处理函数,主要是处理同一个事件绑定的多个处理函数
             if (Array.isArray(invoker.value)) {
               invoker.value.forEach((fn) => fn(e));
@@ -119,6 +124,8 @@ const renderer = createRenderer({
           };
           // 将真正的时间处理函数赋值给 invoker.value
           invoker.value = nextValue;
+          // 添加 invoker.attached 属性，存储时间处理函数被绑定的时间
+          invoker.attached = performance.now();
           // 绑定 invoker 作为事件处理函数
           el.addEventListener(name, invoker);
         } else {
