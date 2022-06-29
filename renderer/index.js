@@ -34,6 +34,59 @@ function createRenderer(options) {
     }
   }
 
+  function patchElement(n1, n2) {
+    const el = (n2.el = n1.el);
+    const oldProps = n1.props;
+    const newProps = n2.props;
+    for (const key in newProps) {
+      if (newProps[key] !== oldProps[key]) {
+        patchProps(el, key, oldProps[key], newProps[key]);
+      }
+    }
+    for (const key in oldProps) {
+      if (!(key in newProps)) {
+        patchProps(el, key, oldProps[key], null);
+      }
+    }
+
+    // 第二步 更新 children
+    patchChildren(n1, n2, el);
+  }
+
+  function patchChildren(n1, n2, container) {
+    // 判断新子节点的类型是否是文本节点
+    if (typeof n2.children === "string") {
+      // 旧子节点有三种可能 没有子节点 文本子节点 以及一组子节点
+      // 只有当旧子节点为一组子节点时 才需要逐步卸载，其他情况什么都不要做
+      if (Array.isArray(n1.children)) {
+        n1.children.forEach((c) => unmount(c));
+      }
+      setElementText(container, n2.children);
+    } else if (Array.isArray(n2.children)) {
+      // 新子节点是一组子节点
+      // 判断旧子节点是否也是一组子节点
+      if (Array.isArray(n1.children)) {
+        // diff 算法,这里暂时先把旧的卸载 把新的挂载处理
+        n1.children.forEach((c) => unmount(c));
+        n2.children.forEach((c) => patch(null, c, container));
+      } else {
+        // 如果不是一组子节点 说明可能是文本子节点或者不存在 这种情况下 只需要将容器清空，然后将新的一组子节点逐个挂载
+        setElementText(container, "");
+        n2.children.forEach((c) => patch(null, c, container));
+      }
+    } else {
+      // 这里说明新的子节点不存在
+      if (Array.isArray(n1.children)) {
+        // 如果旧的子节点是一组子节点逐个卸载
+        n1.children.forEach((c) => unmount(c));
+      } else if (typeof n1.children === "string") {
+        // 如果旧的子节点是字符串节点 则将内容清空
+        setElementText(container, "");
+      }
+      // 如果原来就是空的就什么都不要做
+    }
+  }
+
   function mountElement(vnode, container) {
     // 调用 createElement 创建元素,同时让 vnode.el 引用真实节点
     const el = (vnode.el = createElement(vnode.type));
