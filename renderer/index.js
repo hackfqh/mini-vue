@@ -1,7 +1,6 @@
 /**
- * 8.10 文本节点和注释节点
- *  人为创造一些唯一的标识表示是文本节点还是注释节点
- *
+ * 8.11 Fragment
+ *  也是一个独特的标识 表示一种 vnode 类型，这种 vnode 只渲染 children,本身不会渲染任何内容
  */
 
 // 文本节点的 type 标识
@@ -9,6 +8,8 @@ const Text = Symbol();
 
 // 注释节点的 type 标识
 const Comment = Symbol();
+
+const Fragment = Symbol();
 function createRenderer(options) {
   // 通过 options 得到操作 DOM 的API
   const {
@@ -57,6 +58,14 @@ function createRenderer(options) {
     } else if (type === Comment) {
       if (!n1) {
         // 调用方法 创建新的注释节点 在 dom 中是 document.createComment 方法
+      }
+    } else if (type === Fragment) {
+      if (!n1) {
+        // 如果旧的 vnode 不存在 则只需要将 Fragment 的 children 逐个挂载即可
+        n2.children.forEach((c) => patch(null, c, container));
+      } else {
+        // 如果旧 vnode 存在，则只需要更新 Fragment 的 children
+        patchChildren(n1, n2, container);
       }
     }
   }
@@ -151,6 +160,9 @@ function createRenderer(options) {
     container._vnode = vnode;
   }
   function unmount(vnode) {
+    if (vnode.type === Fragment) {
+      vnode.children.forEach((c) => unmount(c));
+    }
     const parent = vnode.el.parentNode;
     if (parent) {
       parent.removeChild(vnode.el);
