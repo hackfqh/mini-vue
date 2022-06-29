@@ -1,13 +1,24 @@
 /**
- * 8.8 事件冒泡与更新时机问题
- *  为父元素绑定事件处理函数发生在事件冒泡之前
- *    解决的办法 就是 屏蔽所有的绑定时间晚于事件触发时间的事件处理函数的执行
+ * 8.10 文本节点和注释节点
+ *  人为创造一些唯一的标识表示是文本节点还是注释节点
  *
  */
 
+// 文本节点的 type 标识
+const Text = Symbol();
+
+// 注释节点的 type 标识
+const Comment = Symbol();
 function createRenderer(options) {
   // 通过 options 得到操作 DOM 的API
-  const { createElement, setElementText, insert, patchProps } = options;
+  const {
+    createElement,
+    setElementText,
+    insert,
+    patchProps,
+    createText,
+    setText,
+  } = options;
 
   /**
    * @param {*} n1 旧的 vnode
@@ -29,8 +40,24 @@ function createRenderer(options) {
       } else {
         patchElement(n1, n2);
       }
-    } else if (typeof type === "object") {
-      // 如果 n2 的类型是对象 则它描述的是组件
+    } else if (type === Text) {
+      // 如果新的 vnode 的类型是 Text 说明该 vnode 描述的是文本节点
+      // 如果没有旧节点就进行挂载
+      if (!n1) {
+        // 调用 options 传入的方法 createText 创建文本节点
+        const el = (n2.el = createText(n2.children));
+        insert(el, container);
+      } else {
+        const el = (n2.el = n1.el);
+        if (n2.children !== n1.children) {
+          // 调用 setText 更新文本内容
+          setText(el, n2.children);
+        }
+      }
+    } else if (type === Comment) {
+      if (!n1) {
+        // 调用方法 创建新的注释节点 在 dom 中是 document.createComment 方法
+      }
     }
   }
 
@@ -151,6 +178,12 @@ const renderer = createRenderer({
     console.log("插入元素");
     // parent.children = el;
     parent.insertBefore(el, anchor);
+  },
+  createText(text) {
+    return document.createTextNode(text);
+  },
+  setText(el, text) {
+    el.nodeValue = text;
   },
   // 将属性设置相关操作封装到 patchProps 函数中，并作为渲染器选项传递
   patchProps(el, key, preValue, nextValue) {
