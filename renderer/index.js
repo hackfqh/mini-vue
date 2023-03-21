@@ -1,6 +1,6 @@
 /**
- * 8.11 Fragment
- *  也是一个独特的标识 表示一种 vnode 类型，这种 vnode 只渲染 children,本身不会渲染任何内容
+ * 9.1 减少 DOM 操作的性能开销
+ *  通过遍历新旧子节点中较短的长度，之后再判断新旧子节点的长度，新的长就挂载，旧的长就卸载
  */
 
 // 文本节点的 type 标识
@@ -102,9 +102,26 @@ function createRenderer(options) {
       // 新子节点是一组子节点
       // 判断旧子节点是否也是一组子节点
       if (Array.isArray(n1.children)) {
-        // diff 算法,这里暂时先把旧的卸载 把新的挂载处理
-        n1.children.forEach((c) => unmount(c));
-        n2.children.forEach((c) => patch(null, c, container));
+        const oldChildren = n1.children;
+        const newChildren = n2.children;
+        const oldLen = oldChildren.length;
+        const newLen = newChildren.length;
+        // 找到新旧节点中最小的长度, 遍历调用 patch 方法
+        const commonLength = Math.min(oldLen, newLen);
+        for (let i = 0; i < commonLength; i++) {
+          patch(oldChildren[i], newChildren[i], container);
+        }
+        // 判断新子节点的长度是否大于旧子节点的长度，如果大于，说明有新子节点需要挂载
+        if (newLen > oldLen) {
+          for (let i = commonLength; i < newLen; i++) {
+            patch(null, newChildren[i], container);
+          }
+        } else if (oldLen > newLen) {
+          // 如果旧的长度大于新的长度，说明有旧的子节点需要卸载
+          for (let i = commonLength; i < oldLen; i++) {
+            unmount(oldChildren[i]);
+          }
+        }
       } else {
         // 如果不是一组子节点 说明可能是文本子节点或者不存在 这种情况下 只需要将容器清空，然后将新的一组子节点逐个挂载
         setElementText(container, "");
