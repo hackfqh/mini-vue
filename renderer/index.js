@@ -1,6 +1,6 @@
 /**
- * 9.1 减少 DOM 操作的性能开销
- *  通过遍历新旧子节点中较短的长度，之后再判断新旧子节点的长度，新的长就挂载，旧的长就卸载
+ * 9.2 DOM 复用与 key 的作用
+ *  可以通过添加 key 来复用 DOM
  */
 
 // 文本节点的 type 标识
@@ -28,7 +28,7 @@ function createRenderer(options) {
    */
   function patch(n1, n2, container) {
     // 如果 n1 存在则对比 n1 和 n2 的类型
-    if (n1.type !== n2.type) {
+    if (n1?.type !== n2.type) {
       // 如果新旧 vnode  的类型不同，则直接将旧 vnode 卸载
       unmount(n1);
       n1 = nulll;
@@ -104,22 +104,35 @@ function createRenderer(options) {
       if (Array.isArray(n1.children)) {
         const oldChildren = n1.children;
         const newChildren = n2.children;
-        const oldLen = oldChildren.length;
-        const newLen = newChildren.length;
-        // 找到新旧节点中最小的长度, 遍历调用 patch 方法
-        const commonLength = Math.min(oldLen, newLen);
-        for (let i = 0; i < commonLength; i++) {
-          patch(oldChildren[i], newChildren[i], container);
-        }
-        // 判断新子节点的长度是否大于旧子节点的长度，如果大于，说明有新子节点需要挂载
-        if (newLen > oldLen) {
-          for (let i = commonLength; i < newLen; i++) {
-            patch(null, newChildren[i], container);
-          }
-        } else if (oldLen > newLen) {
-          // 如果旧的长度大于新的长度，说明有旧的子节点需要卸载
-          for (let i = commonLength; i < oldLen; i++) {
-            unmount(oldChildren[i]);
+        // const oldLen = oldChildren.length;
+        // const newLen = newChildren.length;
+        // // 找到新旧节点中最小的长度, 遍历调用 patch 方法
+        // const commonLength = Math.min(oldLen, newLen);
+        // for (let i = 0; i < commonLength; i++) {
+        //   patch(oldChildren[i], newChildren[i], container);
+        // }
+        // // 判断新子节点的长度是否大于旧子节点的长度，如果大于，说明有新子节点需要挂载
+        // if (newLen > oldLen) {
+        //   for (let i = commonLength; i < newLen; i++) {
+        //     patch(null, newChildren[i], container);
+        //   }
+        // } else if (oldLen > newLen) {
+        //   // 如果旧的长度大于新的长度，说明有旧的子节点需要卸载
+        //   for (let i = commonLength; i < oldLen; i++) {
+        //     unmount(oldChildren[i]);
+        //   }
+        // }
+
+        // 遍历新的 children
+        for (let i = 0; i < newChildren.length; i++) {
+          const newVNode = newChildren[i];
+          for (let j = 0; j < oldChildren.length; j++) {
+            const oldVNode = oldChildren[j];
+            // 如果找到了具有相同 key 值的两个节点，说明可以复用，但仍然需要调用 patch 函数更新节点内容
+            if (newVNode.key === oldVNode.key) {
+              patch(oldVNode, newVNode, container);
+              break;
+            }
           }
         }
       } else {
@@ -273,21 +286,27 @@ const renderer = createRenderer({
   },
 });
 
-const vnode = {
+const oldVNode = {
   type: "div",
-  props: {
-    id: "foo",
-    onclick: () => {
-      console.log("onClick");
-    },
-  },
   children: [
-    {
-      type: "p",
-      children: "hello ",
-    },
+    { type: "p", children: "1", key: 1 },
+    { type: "p", children: "2", key: 2 },
+    { type: "p", children: "hello", key: 3 },
+  ],
+};
+
+const newVNode = {
+  type: "div",
+  children: [
+    { type: "p", children: "world", key: 3 },
+    { type: "p", children: "1", key: 1 },
+    { type: "p", children: "2", key: 2 },
   ],
 };
 
 const container = document.getElementById("app");
-renderer.render(vnode, container);
+renderer.render(oldVNode, container);
+
+setTimeout(() => {
+  renderer.render(newVNode, container);
+}, 1000);
