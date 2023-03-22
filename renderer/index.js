@@ -1,6 +1,9 @@
 /**
- * 9.4 如何移动元素
- *  找到在新的children种当前vnode的上一个虚拟节点，通过 insert 插入到上一个节点真实节点的后面
+ * 9.5 添加新元素
+ *  在外层循环中定义 find 变量代表是否在旧的子节点中找到，如果没有找到就是需要新添加的元素
+ *  在添加的时候，找一下是否存在上一个节点，如果有的话，用上一个节点的下一个兄弟元素作为锚点
+ *  否则的话说明添加的是第一个子元素位置，用容器中的第一个元素作为锚点插入
+ *  需要调整 patch 函数接收 anchor 参数，同时传递给 mountElement 中并透传到 insert 方法中
  */
 
 // 文本节点的 type 标识
@@ -26,7 +29,7 @@ function createRenderer(options) {
    * @param {*} n2 新的 vnode
    * @param {*} container
    */
-  function patch(n1, n2, container) {
+  function patch(n1, n2, container, anchor) {
     // 如果 n1 存在则对比 n1 和 n2 的类型
     if (n1?.type !== n2.type) {
       // 如果新旧 vnode  的类型不同，则直接将旧 vnode 卸载
@@ -37,7 +40,7 @@ function createRenderer(options) {
     if (typeof type === "string") {
       // 如果 n1 不存在，意味着挂载，调用 mountElement 函数完成挂载
       if (!n1) {
-        mountElement(n2, container);
+        mountElement(n2, container, anchor);
       } else {
         patchElement(n1, n2);
       }
@@ -130,8 +133,11 @@ function createRenderer(options) {
           const newVNode = newChildren[i];
           for (let j = 0; j < oldChildren.length; j++) {
             const oldVNode = oldChildren[j];
+            // 表示当前节点是否在旧的children中
+            let find = false;
             // 如果找到了具有相同 key 值的两个节点，说明可以复用，但仍然需要调用 patch 函数更新节点内容
             if (newVNode.key === oldVNode.key) {
+              find = true;
               patch(oldVNode, newVNode, container);
               if (j < lastIndex) {
                 // 如果找到的节点在旧 children 中索引小于最大索引值 lastIndex
@@ -148,6 +154,22 @@ function createRenderer(options) {
                 lastIndex = j;
               }
               break;
+            }
+            // 内层循环之后 find 还是 false 说明没有找到
+            // 因此需要挂载
+            if (!find) {
+              const preVNode = newChildren[i - 1];
+              let anchor;
+              if (preVNode) {
+                // 如果有前一个 vnode，则使用他的下一个兄弟节点作为锚点
+                anchor = preVNode.el.nextSibling;
+              } else {
+                // 如果没有前一个 vnode，说明挂载的新节点是第一个子节点
+                // 这是需要使用容器中的第一个元素作为锚点
+                anchor = container.firstChild;
+              }
+              // 挂载 newVNode
+              patch(null, newVNode, container, anchor);
             }
           }
         }
@@ -169,7 +191,7 @@ function createRenderer(options) {
     }
   }
 
-  function mountElement(vnode, container) {
+  function mountElement(vnode, container, anchor) {
     // 调用 createElement 创建元素,同时让 vnode.el 引用真实节点
     const el = (vnode.el = createElement(vnode.type));
     if (typeof vnode.children === "string") {
@@ -191,7 +213,7 @@ function createRenderer(options) {
     }
 
     // 调用 insert 函数将元素插入到容器内
-    insert(el, container);
+    insert(el, container, anchor);
   }
   function render(vnode, container) {
     if (vnode) {
