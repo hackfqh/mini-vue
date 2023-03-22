@@ -1,6 +1,6 @@
 /**
- * 9.3 找到需要移动的元素
- *  通过相同key值对应旧children中索引值和最大索引值做比较来判断是否需要移动
+ * 9.4 如何移动元素
+ *  找到在新的children种当前vnode的上一个虚拟节点，通过 insert 插入到上一个节点真实节点的后面
  */
 
 // 文本节点的 type 标识
@@ -136,6 +136,13 @@ function createRenderer(options) {
               if (j < lastIndex) {
                 // 如果找到的节点在旧 children 中索引小于最大索引值 lastIndex
                 // 说明该节点对应的真实DOM需要一定
+                // 找到 newVNode 的前一个 vnode
+                const preVNnode = newChildren[i - 1];
+                if (preVNnode) {
+                  // 找到 preVNode 对应真实 DOM 的下一个兄弟节点，将其作为锚点
+                  const anchor = preVNnode.el.nextSibling;
+                  insert(newVNode.el, container, anchor);
+                }
               } else {
                 // 如果不小于，则更新lastIndex 的值
                 lastIndex = j;
