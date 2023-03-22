@@ -1,9 +1,6 @@
 /**
- * 9.5 添加新元素
- *  在外层循环中定义 find 变量代表是否在旧的子节点中找到，如果没有找到就是需要新添加的元素
- *  在添加的时候，找一下是否存在上一个节点，如果有的话，用上一个节点的下一个兄弟元素作为锚点
- *  否则的话说明添加的是第一个子元素位置，用容器中的第一个元素作为锚点插入
- *  需要调整 patch 函数接收 anchor 参数，同时传递给 mountElement 中并透传到 insert 方法中
+ * 9.6 移除不存在的元素
+ *  等外层循环结束后 重新遍历下旧的子节点，同时找一个每一项是否在新的子节点中存在，如果不存在，说明是需要移除的节点
  */
 
 // 文本节点的 type 标识
@@ -171,6 +168,16 @@ function createRenderer(options) {
               // 挂载 newVNode
               patch(null, newVNode, container, anchor);
             }
+          }
+        }
+
+        for (let i = 0; i < oldChildren; i++) {
+          const oldVNode = oldChildren[i];
+          // 拿旧子节点去新的子节点中找是否有相同的key
+          const has = newChildren.find((vnode) => vnode.key === oldVNode.key);
+          if (!has) {
+            // 如果没有找到说明是需要删除的节点
+            unmount(oldVNode);
           }
         }
       } else {
