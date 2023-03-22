@@ -1,6 +1,6 @@
 /**
- * 9.2 DOM 复用与 key 的作用
- *  可以通过添加 key 来复用 DOM
+ * 9.3 找到需要移动的元素
+ *  通过相同key值对应旧children中索引值和最大索引值做比较来判断是否需要移动
  */
 
 // 文本节点的 type 标识
@@ -123,6 +123,8 @@ function createRenderer(options) {
         //   }
         // }
 
+        // 用来存储寻找过程中遇到的最大索引值
+        let lastIndex = 0;
         // 遍历新的 children
         for (let i = 0; i < newChildren.length; i++) {
           const newVNode = newChildren[i];
@@ -131,6 +133,13 @@ function createRenderer(options) {
             // 如果找到了具有相同 key 值的两个节点，说明可以复用，但仍然需要调用 patch 函数更新节点内容
             if (newVNode.key === oldVNode.key) {
               patch(oldVNode, newVNode, container);
+              if (j < lastIndex) {
+                // 如果找到的节点在旧 children 中索引小于最大索引值 lastIndex
+                // 说明该节点对应的真实DOM需要一定
+              } else {
+                // 如果不小于，则更新lastIndex 的值
+                lastIndex = j;
+              }
               break;
             }
           }
